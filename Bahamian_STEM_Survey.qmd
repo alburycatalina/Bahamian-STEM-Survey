@@ -1,0 +1,531 @@
+---
+title: "Bahamian STEM Survey"
+format: html
+editor: visual
+execute: 
+  echo: false
+  warning: false
+---
+
+
+```{r echo= FALSE, warning= FALSE, message= FALSE}
+
+# load required libraries
+library(here)
+library(readxl)
+library(tidyverse)
+library(fuzzyjoin)
+library(flextable)
+
+# Declare file location with `here`
+here::i_am("Bahamian_STEM_Survey.qmd")
+
+
+# Load survey data
+survey_df <- read_excel("Exploring the STEM Pathways of Bahamians (Responses).xlsx")
+
+# Save column names for labels 
+questions <- colnames(survey_df)
+
+# Clean up df
+survey_df_clean <-  rename_with(survey_df, ~ make.names(.x)) |> 
+    mutate(`Where.do.you.currently.reside.` = ifelse(grepl(`Where.do.you.currently.reside.`,
+                                                         pattern = "Bahamas"),
+                                                   "The Bahamas",
+                                                   `Where.do.you.currently.reside.`)) |> 
+   rename(
+    island_high_school = On.which.island.do.did.you.attend.high.school.,
+    type_high_school = What.type.of.high.school.do.did.you.attend.,
+    identity = Which.of.the.following.best.describes.you.,
+    current_residence = Where.do.you.currently.reside.,
+    undergrad_field = What.field.is.your.undergraduate.degree.in.,
+    non_stem_path = How.did.you.transition.into.a.STEM.career.without.an.undergraduate.STEM.degree.,
+    education_impact = Do.you.feel.that.your.educational.background.has.impacted.your.career.progression.in.STEM.,
+    stem_interest_factors_highschool = Which.of.the.following.have.contributed.most.to.your.interest.in.pursuing.a.STEM.related.degree.in.college....9,
+    stem_interest_fields = Which.STEM.or.STEM.related.fields.interest.you.the.most.,
+    perceived_barriers_college = What.barriers..if.any..do.you.think.will.affect.your.ability.to.pursue.a.STEM.related.degree.in.college.,
+    want_stem_mentor = Would.you.be.interested.in.being.matched.with.a.mentor.in.a.STEM.field.,
+    stem_interest_factors_undergrad = Which.of.the.following.have.contributed.most.to.your.interest.in.pursuing.a.STEM.related.degree.in.college....13,
+    first_gen_college = Are.you.the.first.in.your.immediate.family.to.attend.college.,
+    current_major = What.is.your.current.major.,
+    undergrad_year = What.year.are.you.in.your.undergraduate.program.,
+    degree_completion_barriers = What.barriers..if.any..are.affecting.your.ability.to.complete.your.degree.,
+    had_internship = Have.you.had.an.internship.or.co.op.experience.in.a.STEM.field.,
+    internship_obstacle = What.has.been.the.biggest.obstacle.to.securing.an.internship.or.co.op.,
+    desired_field = What.is.your.desired.field.after.graduation.,
+    desired_title = What.is.your.desired.job.title.after.graduation.,
+    desired_salary = What.is.your.desired.starting.salary.range..USD..,
+    have_mentor = Do.you.currently.have.a.mentor.in.your.field.,
+    want_mentor = Would.you.be.interested.in.being.matched.with.a.mentor.,
+    mentorship_email = If.you.would.like.to.be.contacted.regarding.potential.mentorship.opportunities..please.leave.your.email.below.,
+    years_since_undergrad = How.long.ago.did.you.graduate.from.your.undergraduate.STEM.program.,
+    employment_status = What.is.your.current.employment.status.,
+    stem_entrepreneur = Are.you.a.STEM.entrepreneur.,
+    employment_satisfaction = Are.you.generally.satisfied.with.your.current.employment.situation.,
+    undergrad_major = What.was.your.undergraduate.major.,
+    use_stem_skills = To.what.extent.do.you.use.the.skills.and.knowledge.from.your.STEM.degree.in.your.current.job.,
+    current_salary = What.is.your.current.salary.income.range..USD..,
+    bahamas_challenges = What.challenges.are.there.to.working.in.the.Bahamas.as.a.STEM.professional.,
+    bahamas_attractions = What.do.you.find.most.attractive.about.working.in.The.Bahamas.,
+    employer_location = Where.is.your.primary.employer.located.,
+    improve_bahamas_working = What.factors.would.make.working.in.The.Bahamas.more.attractive.compared.to.your.current.employment.situation.,
+    has_graduate_degree = Did.you.pursue.or.are.you.currently.pursuing.a.graduate.degree.,
+    type_graduate_degree = What.type.of.graduate.degree.are.you.pursuing.have.completed.,
+    can_support_students = Are.you.in.a.position.to.hire..mentor..or.offer.internships.to.Bahamian.college.students.,
+    mentorship_employment_email = If.you.would.like.to.be.contacted.regarding.potential.mentorship.or.employment.opportunities..please.leave.your.email.below.,
+    org_support_suggestions = Do.you.have.any.suggestions.for.how.our.organizations.can.better.support.Bahamian.students.and.professionals.in.STEM.fields.,
+    timestamp = Timestamp
+  ) |> 
+  
+  # Remove those that don't fit the survey target demo
+  filter(identity != "None")
+  
+
+```
+# Demographic Summary
+
+```{r demographic-summary}
+# Total participants
+total_participants <- nrow(survey_df_clean)
+
+# Participants in each demographic
+survey_demo <- survey_df_clean |> 
+  group_by(identity) |> 
+  count()
+
+```
+
+There were `r total_participants` participants. 
+
+```{r}
+flextable(survey_demo)
+```
+
+# 1. Where are current Bahamian college students in STEM and STEM adjacent fields?
+
+## Majors
+
+The most popular majors in current college students are engineering, biological sciences, and physical sciences (which were primarily composed of student pursuing studies in marine sciences).
+
+```{r}
+
+# Grab current undergrads
+current_undergrads_df <- survey_df_clean |>
+  filter(identity == "Current undergraduate student in a STEM field")
+
+# Counts for majors
+majors_df <- current_undergrads_df |>
+  rename("Major_detailed" = current_major)  |>  
+  mutate(Major_detailed = ifelse(grepl(Major_detailed , 
+                                       pattern = "Information Technology"),
+                                    "Information Technology",
+                                    Major_detailed)) |>
+  distinct(Major_detailed)
+
+# Load STEM majors from UCLA Higher ed research institute list for fuzzy matching
+majors_categories <- read.csv(file = here("majors_HERI.csv"))
+
+# Fuzzy matching for categories
+# Note - if both majors listed, only one will be used
+major_matches  <- stringdist_join(majors_df, majors_categories,
+                by='Major_detailed', #match based on team
+                mode='left', #use left join
+                method = "jw", #use jw distance metric
+                max_dist=99,
+                distance_col='dist') |>
+  group_by(Major_detailed.x) |>
+  slice_min(order_by=dist, n=1) |>
+  ungroup() |>
+  group_by(Major) |>
+  count()
+
+# Barplot for majors 
+ggplot(major_matches, aes(x = Major, y = n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+```
+
+## Location
+
+Most current undergraduate students are in the Bahamas. 
+Note: survey design flaw here. Did not ask where students were attending uni Some might've interpreted this as where they study. 
+
+```{r}
+
+# Note: survey design flaw here. Did not ask where attending uni. Some might've interpreted this differently 
+location_df <- current_undergrads_df |>
+    group_by(current_residence) |>
+  count()
+
+# Barplot location
+# Barplot for majors 
+ggplot(location_df, aes(x = current_residence, y = n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+
+```
+
+## Years
+
+Most students are taking the normal amount of time to complete their degrees. 
+
+```{r}
+
+# Get years counts
+years_df <- current_undergrads_df |>
+    group_by(undergrad_year) |>
+  count()
+
+# Barplot undergrad year
+ggplot(years_df, aes(x = undergrad_year, y = n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+```
+
+# 2. Did participants have any interaction with a pre-college or summer program that piqued their interest in a STEM pr STEM adjacent field?
+
+```{r}
+
+highschool_and_undergrads_df <- survey_df_clean |>
+  filter(identity == "Current high school student considering a STEM major"|
+          identity ==  "Current undergraduate student in a STEM field")
+
+
+interests_df <- highschool_and_undergrads_df |>
+
+  # select columns related to interest in STEM
+  select(identity,
+         stem_interest_factors_highschool,
+         stem_interest_factors_undergrad) |>
+
+  # Bring together high school and undergrad interest columns
+  mutate(contributed_interest = coalesce(stem_interest_factors_highschool,
+                                         stem_interest_factors_undergrad)) |> 
+  select(identity, 
+         contributed_interest)
+
+# List possible reasons of interest 
+reasons_interest <- c("I attended a STEM pre-college or summer program", "High salary expectations", "I know family or community members with careers in STEM", "STEM subjects are my favorite classes in school", "Encouraged by a peer, teacher, parent or community member", "I enjoy STEM topics as a hobby/outside of the classroom", "I am good in STEM subjects", "The career I am interested in happens to be STEM")
+
+reason_counts <- sapply(reasons_interest, function(reason) {
+  sum(str_detect(interests_df$contributed_interest, fixed(interests_df$contributed_interest)))
+})
+
+interests_df_counted <- interests_df |> 
+  mutate(program = as.integer(str_detect(contributed_interest, "I attended a STEM pre-college or summer program")), 
+         high_salary_expectations = as.integer(str_detect(contributed_interest, "High salary expectations")),
+         family_stem = as.integer(str_detect(contributed_interest, "I know family or community members with careers in STEM")),
+         favorite_class = as.integer(str_detect(contributed_interest, "STEM subjects are my favorite classes in school")),
+         stem_hobby = as.integer(str_detect(contributed_interest, "I enjoy STEM topics as a hobby/outside of the classroom")), 
+         stem_classroom = as.integer(str_detect(contributed_interest, "I am good in STEM subjects")),
+         career = as.integer(str_detect(contributed_interest, "The career I am interested in happens to be STEM")),
+         encourgaed = as.integer(str_detect(contributed_interest, "Encouraged by a peer, teacher, parent or community member"))) |> 
+  select(-c(contributed_interest)) |> 
+  pivot_longer(!identity, names_to = "reason_interest", values_to = "number") |> 
+  filter(number != 0) |> 
+  group_by(identity, reason_interest) |> 
+  count()
+
+# Plot
+ggplot(interests_df_counted, aes(fill=reason_interest, y=n, x=identity)) + 
+  geom_bar(position='dodge', stat='identity') +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+        
+      
+
+```
+
+# 3. Where are Bahamian STEM professionals? What are the factors that contribute to their location?
+
+## Location 
+Graduates of STEM degrees are mostly in the US. Some in Canada
+```{r stem-professionals}
+stem_professionals_df <- survey_df_clean |> 
+  filter(identity == "Graduate of an undergraduate STEM program") 
+
+
+abroad_df <- stem_professionals_df |> 
+  count(current_residence, employment_status) |> 
+  filter(employment_status == "Employed Abroad (STEM field)")
+
+ggplot(abroad_df, aes( x =current_residence, y = n)) +
+  geom_bar(stat='identity') +
+  labs(x = "Locations", y = "Count")
+```
+
+## Factors contributing or working against working in the Bahamas
+
+The primary draw to working in the Bahamas is closeness to family and cultural reasons. The primary detriment is low salary. 
+
+```{r}
+
+challenges_bahamas_options <- c(
+  "Low Salary",
+  "Job Availability",
+  "Career Growth",
+  "Cost of Living",
+  "Quality of Life",
+  "Political Stability",
+  "Family Commitments",
+  "Access to Healthcare",
+  "Job Diversity",
+  "Limited access to cutting-edge research or technology"
+)
+
+attractions_bahamas_options <- c(
+  "Competitive salary and financial incentives",
+  "Work-life balance and flexible work arrangements",
+  "Family and community connections",
+  "Lower cost of living compared to other regions",
+  "Cultural and social environment",
+  "Stronger career advancement and leadership opportunities",
+  "Access to multiple revenue streams and entrepreneurial opportunities",
+  "Increased investment in STEM research and innovation",
+  "Political and economic stability",
+  "Better access to housing and property ownership",
+  "Nothing - I am actively looking to move abroad"
+)
+
+Bahamas_res_df <- stem_professionals_df |> 
+  filter(current_residence == "The Bahamas" & !is.na(bahamas_challenges) & !is.na(bahamas_attractions)) |> 
+  select(bahamas_challenges, bahamas_attractions) 
+         
+# Count how many responses mention each reason
+challenges_reason_counts <- sapply(challenges_bahamas_options, function(reason) {
+  as.integer(str_detect(Bahamas_res_df$bahamas_challenges, pattern = reason))
+})
+
+attractions_reason_counts <- sapply(attractions_bahamas_options, function(reason) {
+  as.integer(str_detect(Bahamas_res_df$bahamas_attractions, pattern = reason))
+})
+
+# Count instances of challenges
+bahamas_challenges_df <- cbind(Bahamas_res_df |> 
+                              select(bahamas_challenges),
+                            challenges_reason_counts) |> 
+  pivot_longer(!bahamas_challenges, names_to = "challenge", values_to = "number") |> 
+  group_by(challenge) |> 
+  summarise(n = sum(number))
+
+# Plot challenges 
+ggplot(bahamas_challenges_df, aes( x =challenge, y = n)) +
+  geom_bar(stat='identity') +
+  labs(title = "Challenges to Working in the Bahamas", x = "Challenge", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+# Count instances of attractions
+bahamas_attractions_df <- cbind(Bahamas_res_df |> 
+                              select(bahamas_attractions),
+                            attractions_reason_counts) |> 
+  pivot_longer(!bahamas_attractions, names_to = "attractions", values_to = "number") |> 
+  group_by(attractions) |> 
+  summarise(n = sum(number))
+
+# Plot challenges 
+ggplot(bahamas_attractions_df, aes( x =attractions, y = n)) +
+  geom_bar(stat='identity') +
+  labs(title = "Benefits to Working in the Bahamas", x = "Benefit", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+```
+
+## Salaries 
+
+Many STEM professionals are in the Bahamas and being paid at the lowest end of the salary range (below 50K). Only those that work in the US reach the higher end (200K+). 
+
+The median salaries of US and Canada were $50,909 and $45,714. The median salary of the Bahamas was not able to be estimated as the majority of participants responded that they made less tha 50K/ year.  
+
+
+```{r}
+
+
+# Desired salary
+stem_professionals_salary <- stem_professionals_df |> 
+  filter(!is.na(current_salary)) |> 
+  select(current_residence, current_salary) |> 
+  group_by(current_residence, current_salary) |> 
+  count() |> 
+  mutate(current_salary = case_when(
+    current_salary %in% c("No current income",
+                        "Below $50,000") ~ "Below $50,000",
+    TRUE ~ current_salary
+  )) |> 
+  mutate(current_salary = factor(current_salary, 
+                                 levels = c("Below $50,000",
+                                            "$50,000 - $69,999",
+                                            "$70,000 - $99,999",
+                                            "$100,000 - $149,999",
+                                            "$150,000 - $199,999",
+                                            "$200,000 - $249,999",
+                                            "$250,000 - $299,999"))) 
+
+# Salaries of STEM graduates
+ggplot(stem_professionals_salary, aes(fill =current_salary, y = n, x= current_residence)) +
+  geom_bar(position = "dodge", stat='identity') +
+  labs(title = "Salaries by Location", x = "Salary", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+# Calculating median salaries by location 
+bin_widths <- data.frame(bin_width = c(NA, 20000, 30000, 50000, 50000, 50000,50000), 
+                         current_salary = c("Below $50,000",
+                                            "$50,000 - $69,999",
+                                            "$70,000 - $99,999",
+                                            "$100,000 - $149,999",
+                                            "$150,000 - $199,999",
+                                            "$200,000 - $249,999",
+                                            "$250,000 - $299,999"))
+
+# Canada median 
+canada_df <- bin_widths |> 
+  left_join(stem_professionals_salary |> filter(current_residence == "Canada"), 
+  by = "current_salary", keep = TRUE)
+  
+half_pop_can <- sum(canada_df$n, na.rm = TRUE)/2
+
+median_group_ll_can <- 50000
+
+cumsum_uptomedian_can <- 8 
+
+freq_mediangroup_can <- 7 
+
+width_mediangroup_can <- 20000
+
+median_can <- median_group_ll_can + ((half_pop_can - cumsum_uptomedian_can ) / freq_mediangroup_can) * width_mediangroup_can  
+
+
+# US median 
+us_df <- bin_widths |> 
+  left_join(stem_professionals_salary |> filter(current_residence == "United States of America"), 
+  by = "current_salary", keep = TRUE)
+  
+half_pop_us <- sum(us_df$n, na.rm = TRUE)/2
+
+median_group_ll_us <- 70000
+
+cumsum_uptomedian_us <- 25 
+
+freq_mediangroup_us <- 11 
+
+width_mediangroup_us <- 30000
+
+median_us <- median_group_ll_us + ((half_pop_us - cumsum_uptomedian_us ) / freq_mediangroup_us) * width_mediangroup_us  
+
+# Bahamas median 
+bah_df <- bin_widths |> 
+  left_join(stem_professionals_salary |> filter(current_residence == "The Bahamas"), 
+  by = "current_salary", keep = TRUE)
+  
+half_pop_bah <- sum(bah_df$n, na.rm = TRUE)/2
+
+```
+
+# 4. Where do Bahamians that study or have studied in STEM fields come from in the Bahamas?
+
+Most participants that study or have studied (not high school students) come from New Providence (62%). New Providence was 73% of the population in 2022, so this number is not dissimilar to the demographics of the Bahamas (NP is not overrepresented). 
+
+More participants from public schools come from the out islands. 
+
+Most participants interested in STEM come from private schools.
+
+```{r}
+# Grab high school students
+high_school_origin <- survey_df_clean |>
+  filter(identity != "Current high school student considering a STEM major") |> 
+  filter(!is.na(type_high_school) & !is.na(island_high_school)) |> 
+  select(type_high_school, island_high_school) |> 
+  group_by(type_high_school, island_high_school) |> 
+  count()
+
+# Plot
+ggplot(high_school_origin, aes(fill=island_high_school, y=n, x=type_high_school)) + 
+  geom_bar(position='dodge', stat='identity') +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+        
+
+```
+
+
+# 5. Do Bahamians that have studied in STEM fields end up working in their fields?
+
+Most who studied are able to use their degrees. Lower proportion in the Bahamas than the US or Canada. Excluded our single UK participant here for brevity. 
+```{r}
+# People who have graduated from STEM degree
+use_stem_skills_df <- survey_df_clean |>
+  filter(identity == "Graduate of an undergraduate STEM program" &
+           current_residence != "United Kingdom") |> 
+  select(use_stem_skills, current_residence) |> 
+  group_by(use_stem_skills, current_residence) |> 
+  count()
+
+ggplot(use_stem_skills_df, aes(fill=use_stem_skills, y=n, x=current_residence)) + 
+  geom_bar(position='dodge', stat='identity') +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+```
+
+# 6. Do salary expectations for Bahamians that are currently studying  in STEM fields meet reality in their desired work location? 
+
+Health professions and egineering had highest expectations for salary. How do these compare to reality? Compare to salaries of professionals in question 3.
+
+```{r}
+# People who have currently studying STEM degree
+salary_expectations_df <- survey_df_clean |>
+  filter(identity == "Current undergraduate student in a STEM field") |> 
+  select(desired_field, desired_salary) |> 
+  rename(Major_detailed = desired_field)
+
+salary_expectations_matched <- stringdist_join(salary_expectations_df, majors_categories, 
+                by='Major_detailed', #match based on team
+                mode='left', #use left join
+                method = "jw", #use jw distance metric
+                max_dist=99,
+                distance_col='dist') |> 
+    group_by(Major_detailed.x) |>
+  slice_min(order_by=dist, n=1) |> 
+  ungroup() |> 
+  select(Major, desired_salary) |> 
+  group_by(Major, desired_salary) |> 
+  filter(!is.na(desired_salary)) |> 
+  count() |> 
+  mutate(desired_salary = factor(desired_salary,
+                                 levels = c("Below $30,000",
+                                            "$30,000 - $49,999",
+                                            "$50,000 - $69,999",
+                                            "$70,000 - $99,999",
+                                            "$100,000+")))
+  
+
+ggplot(salary_expectations_matched, aes(fill=desired_salary, y=n, x=Major)) + 
+  geom_bar(position='dodge', stat='identity') +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))       
+```
+7. How do Undergrad's perceptions of their degree change over time? (Challenges to completion)
+
+Financial difficulties more common in first year. 
+
+
+```{r}
+
+completion_barriers_options <- c("Financial difficulties", "Academic challenges", "Lack of mentorship", "Family responsibilities", "No major obstacles")
+
+undergrad_perceptions <- survey_df_clean |> 
+  filter(identity == "Current undergraduate student in a STEM field" & !is.na(degree_completion_barriers))|> 
+  select(undergrad_year, degree_completion_barriers )
+
+# Count how many responses mention each reason
+completion_barriers_count <- sapply(completion_barriers_options, function(reason) {
+  as.integer(str_detect(undergrad_perceptions$degree_completion_barriers, pattern = reason))
+})
+
+undergrad_perceptions_counted <- cbind(undergrad_perceptions, completion_barriers_count) |> 
+  pivot_longer(!c(degree_completion_barriers, undergrad_year), names_to = "barrier", values_to = "number") |> 
+  group_by(barrier, undergrad_year) |> 
+  summarise(n = sum(number))
+
+ggplot(undergrad_perceptions_counted, aes(fill=barrier, y=n, x=undergrad_year)) + 
+  geom_bar(position='dodge', stat='identity') +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))  
+```
