@@ -502,7 +502,7 @@ ggplot(salary_expectations_matched, aes(fill=desired_salary, y=n, x=Major)) +
   geom_bar(position='dodge', stat='identity') +
   theme(axis.text.x = element_text(angle = 45, hjust=1))       
 ```
-7. How do Undergrad's perceptions of their degree change over time? (Challenges to completion)
+# 7. How do Undergrad's perceptions of their degree change over time? (Challenges to completion)
 
 Financial difficulties more common in first year. 
 
